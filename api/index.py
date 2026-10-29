@@ -200,6 +200,23 @@ def transcript(url: Optional[str] = None, body: Optional[TranscriptRequest] = No
         result = fetch_captions(video_id, languages)
         source = "youtube_captions"
     except Exception as caption_err:
+        proxy_info = {
+            "proxy_configured": get_proxy_url() is not None,
+            "proxy_pool_size": len(
+                [h for h in os.getenv("PROXY_HOSTS", "").split(",") if h.strip()]
+            ),
+        }
+        if not isinstance(caption_err, (NoTranscriptFound, TranscriptsDisabled)):
+            # captions blocked/failed (not "video has none"): audio download
+            # would be blocked the same way, so report the real cause
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "message": "Could not reach YouTube captions (likely IP/proxy blocked)",
+                    "caption_error": str(caption_err).strip()[:300],
+                    **proxy_info,
+                },
+            )
         try:
             result = transcribe_audio(video_id)
             source = "audio_transcription"
@@ -210,6 +227,7 @@ def transcript(url: Optional[str] = None, body: Optional[TranscriptRequest] = No
                     "message": "No captions found and audio transcription failed",
                     "caption_error": str(caption_err)[:300],
                     "audio_error": str(audio_err)[:300],
+                    **proxy_info,
                 },
             )
 

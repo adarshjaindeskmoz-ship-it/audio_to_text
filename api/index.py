@@ -134,11 +134,20 @@ def transcribe_audio(video_id: str) -> dict:
             "noplaylist": True,
             "max_filesize": MAX_AUDIO_BYTES,
         }
-        proxy_url = get_proxy_url()
-        if proxy_url:
-            opts["proxy"] = proxy_url
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
+        for attempt in range(5):
+            proxy_url = get_proxy_url()
+            if proxy_url:
+                opts["proxy"] = proxy_url
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
+                break
+            except yt_dlp.utils.DownloadError as err:
+                # a blocked proxy is worth retrying with another one; anything
+                # else (unavailable/private video) is final
+                blocked = "not a bot" in str(err) or "Unable to connect" in str(err)
+                if not (blocked and proxy_url and attempt < 4):
+                    raise
 
         files = os.listdir(tmp)
         if not files:

@@ -6,7 +6,8 @@ from urllib.parse import parse_qs, urlparse
 
 import requests
 import yt_dlp
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.proxies import GenericProxyConfig
@@ -117,12 +118,24 @@ def transcribe_audio(video_id: str) -> dict:
     }
 
 
+@app.exception_handler(404)
+def not_found(request: Request, exc):
+    # include the path the function actually received, to debug Vercel routing
+    return JSONResponse(
+        status_code=404,
+        content={"detail": "Not Found", "received_path": request.url.path},
+    )
+
+
 @app.get("/")
 def health():
     return {"status": "ok", "usage": "POST /api/transcript {\"url\": \"<youtube url>\"}"}
 
 
 @app.api_route("/api/transcript", methods=["GET", "POST"])
+@app.api_route("/transcript", methods=["GET", "POST"])
+@app.api_route("/api/index", methods=["GET", "POST"])
+@app.api_route("/api/index/transcript", methods=["GET", "POST"])
 def transcript(url: Optional[str] = None, body: Optional[TranscriptRequest] = None):
     target = url or (body.url if body else None)
     if not target:

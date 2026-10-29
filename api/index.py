@@ -1,4 +1,5 @@
 import os
+import random
 import re
 import tempfile
 from typing import Optional
@@ -14,7 +15,25 @@ from youtube_transcript_api.proxies import GenericProxyConfig
 
 app = FastAPI(title="YouTube Transcript API")
 
-PROXY_URL = os.getenv("PROXY_URL")  # optional, e.g. http://user:pass@host:port
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()  # local runs only; on Vercel use env vars
+except ImportError:
+    pass
+
+
+def get_proxy_url() -> Optional[str]:
+    """PROXY_URL, or a random pick from PROXY_HOSTS (host:port,...) with PROXY_USERNAME/PASSWORD."""
+    if os.getenv("PROXY_URL"):
+        return os.getenv("PROXY_URL")
+    hosts = [h.strip() for h in os.getenv("PROXY_HOSTS", "").split(",") if h.strip()]
+    user, pwd = os.getenv("PROXY_USERNAME"), os.getenv("PROXY_PASSWORD")
+    if hosts and user and pwd:
+        return f"http://{user}:{pwd}@{random.choice(hosts)}"
+    return None
+
+
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 MAX_AUDIO_BYTES = 24 * 1024 * 1024  # Whisper endpoints reject files > 25MB
@@ -46,9 +65,10 @@ def extract_video_id(url: str) -> str:
 
 
 def fetch_captions(video_id: str, languages: list[str]) -> dict:
+    proxy_url = get_proxy_url()
     proxy = (
-        GenericProxyConfig(http_url=PROXY_URL, https_url=PROXY_URL)
-        if PROXY_URL
+        GenericProxyConfig(http_url=proxy_url, https_url=proxy_url)
+        if proxy_url
         else None
     )
     api = YouTubeTranscriptApi(proxy_config=proxy)
@@ -82,8 +102,9 @@ def transcribe_audio(video_id: str) -> dict:
             "noplaylist": True,
             "max_filesize": MAX_AUDIO_BYTES,
         }
-        if PROXY_URL:
-            opts["proxy"] = PROXY_URL
+        proxy_url = get_proxy_url()
+        if proxy_url:
+            opts["proxy"] = proxy_url
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
 
